@@ -25,10 +25,15 @@
 #include "nwgraph/util/traits.hpp"
 
 #if defined(NWGRAPH_BACKEND_HPX)
-  #include <hpx/parallel/algorithms/for_each.hpp>
-  #include <hpx/parallel/algorithms/for_loop.hpp>
-  #include <hpx/parallel/algorithms/transform_reduce.hpp>
-  #include <hpx/include/util.hpp>
+  // HPX 2.0 headers
+  #include <hpx/algorithm.hpp>
+  #include <hpx/execution.hpp>
+  #include <hpx/include/parallel_for_each.hpp>
+  #include <hpx/include/parallel_for_loop.hpp>
+  #include <hpx/include/parallel_transform_reduce.hpp>
+  #include <hpx/iterator_support/counting_iterator.hpp>
+  #include <hpx/execution/executors/adaptive_static_chunk_size.hpp>
+  #include <thread>
 #else
   #include <tbb/parallel_for.h>
   #include <tbb/parallel_reduce.h>
@@ -36,6 +41,31 @@
 
 namespace nw {
 namespace graph {
+
+#if defined(NWGRAPH_BACKEND_HPX)
+namespace detail {
+
+/**
+ * @brief Get HPX execution policy with adaptive chunking.
+ *
+ * Uses HPX's adaptive_static_chunk_size which automatically determines
+ * optimal chunk sizes based on the problem size and core count.
+ * This is equivalent to OpenMP's STATIC scheduling directive.
+ *
+ * @return Parallel execution policy with adaptive static chunk size
+ */
+inline auto chunked_policy() {
+  // adaptive_static_chunk_size automatically computes:
+  // - For large inputs (>32M): 8 chunks per core
+  // - For medium inputs (>512K): 4 chunks per core
+  // - Otherwise: 2-4 chunks per core
+  // This matches TBB's blocked_range behavior more closely
+  return hpx::execution::par.with(
+      hpx::execution::experimental::adaptive_static_chunk_size());
+}
+
+}  // namespace detail
+#endif
 
 /**
  * Inner evaluation function for parallel_for.
@@ -118,8 +148,8 @@ void parallel_for(Range&& range, Op&& op) {
 
   if (range.is_divisible()) {
 #if defined(NWGRAPH_BACKEND_HPX)
-    // HPX uses for_each on the range
-    hpx::for_each(hpx::execution::par, range.begin(), range.end(),
+    // HPX uses for_each on the range with adaptive chunking for better performance
+    hpx::for_each(detail::chunked_policy(), range.begin(), range.end(),
                   [&](auto&& elem) { parallel_for_inner(op, elem); });
 #else
     // TBB uses parallel_for with splittable ranges
@@ -154,8 +184,8 @@ auto parallel_reduce(Range&& range, Op&& op, Reduce&& reduce, T init) {
 
   if (range.is_divisible()) {
 #if defined(NWGRAPH_BACKEND_HPX)
-    // HPX uses transform_reduce
-    return hpx::transform_reduce(hpx::execution::par,
+    // HPX uses transform_reduce with adaptive chunking for better performance
+    return hpx::transform_reduce(detail::chunked_policy(),
                                   range.begin(), range.end(),
                                   init,
                                   std::forward<Reduce>(reduce),
@@ -186,7 +216,8 @@ void parallel_for_each(std::size_t begin, std::size_t end, Op&& op) {
   backend::init_guard guard;  // Ensure runtime is initialized
 
 #if defined(NWGRAPH_BACKEND_HPX)
-  hpx::for_loop(hpx::execution::par, begin, end, std::forward<Op>(op));
+  // HPX 2.0: for_loop with adaptive chunking for better performance
+  hpx::experimental::for_loop(detail::chunked_policy(), begin, end, std::forward<Op>(op));
 #else
   tbb::parallel_for(tbb::blocked_range<std::size_t>(begin, end),
                     [&](const auto& r) {
@@ -217,7 +248,8 @@ T parallel_reduce_each(std::size_t begin, std::size_t end, T init, Op&& op, Redu
   backend::init_guard guard;  // Ensure runtime is initialized
 
 #if defined(NWGRAPH_BACKEND_HPX)
-  return hpx::transform_reduce(hpx::execution::par,
+  // HPX transform_reduce with adaptive chunking for better performance
+  return hpx::transform_reduce(detail::chunked_policy(),
                                 hpx::util::counting_iterator<std::size_t>(begin),
                                 hpx::util::counting_iterator<std::size_t>(end),
                                 init,

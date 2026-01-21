@@ -42,7 +42,7 @@ void bench_memory_bound(const Args& args) {
   const size_t N = args.problem_size;
   std::vector<double> data(N, 1.0);
 
-  auto counts = thread_counts(args.max_threads);
+  auto counts = args.get_thread_counts();
 
   scaling_study("parallel_for (memory bound)", [&](size_t nthreads) {
     ThreadLimiter limiter(nthreads);
@@ -74,7 +74,7 @@ void bench_compute_bound(const Args& args) {
     x = x / N * 3.14159;
   }
 
-  auto counts = thread_counts(args.max_threads);
+  auto counts = args.get_thread_counts();
 
   scaling_study("parallel_for (compute bound)", [&](size_t nthreads) {
     ThreadLimiter limiter(nthreads);
@@ -103,7 +103,7 @@ void bench_splittable_range(const Args& args) {
   std::vector<size_t> indices(N);
   std::iota(indices.begin(), indices.end(), 0);
 
-  auto counts = thread_counts(args.max_threads);
+  auto counts = args.get_thread_counts();
 
   scaling_study("parallel_for (splittable_range)", [&](size_t nthreads) {
     ThreadLimiter limiter(nthreads);
@@ -136,7 +136,7 @@ void bench_irregular_work(const Args& args) {
     work_counts[i] = (i % 100) + 1;  // 1 to 100 iterations per element
   }
 
-  auto counts = thread_counts(args.max_threads);
+  auto counts = args.get_thread_counts();
 
   scaling_study("parallel_for (irregular work)", [&](size_t nthreads) {
     ThreadLimiter limiter(nthreads);

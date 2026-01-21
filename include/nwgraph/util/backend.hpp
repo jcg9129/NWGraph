@@ -24,14 +24,15 @@
 // Define NWGRAPH_BACKEND_HPX to use HPX, otherwise TBB is used
 #if defined(NWGRAPH_BACKEND_HPX)
 
-  #include <hpx/local/init.hpp>
-  #include <hpx/modules/algorithms.hpp>
-  #include <hpx/modules/execution.hpp>
-  #include <hpx/modules/runtime_local.hpp>
-  #include <hpx/parallel/algorithms/for_each.hpp>
-  #include <hpx/parallel/algorithms/for_loop.hpp>
-  #include <hpx/parallel/algorithms/reduce.hpp>
-  #include <hpx/parallel/algorithms/transform_reduce.hpp>
+  // HPX 2.0 headers
+  #include <hpx/algorithm.hpp>
+  #include <hpx/execution.hpp>
+  #include <hpx/init.hpp>
+  #include <hpx/runtime.hpp>
+  #include <hpx/include/parallel_for_each.hpp>
+  #include <hpx/include/parallel_for_loop.hpp>
+  #include <hpx/include/parallel_reduce.hpp>
+  #include <hpx/include/parallel_transform_reduce.hpp>
 
   #define NWGRAPH_PARALLEL_BACKEND "HPX"
   #define NWGRAPH_BACKEND_HPX_ENABLED 1
@@ -107,6 +108,24 @@ public:
   }
 
   /**
+   * @brief Set desired thread count before initialization.
+   * Must be called before first parallel operation.
+   * @param n Number of threads (0 = use all available)
+   */
+  void set_num_threads(std::size_t n) {
+    if (!initialized_.load(std::memory_order_acquire)) {
+      num_threads_ = n;
+    }
+  }
+
+  /**
+   * @brief Get configured thread count.
+   */
+  std::size_t get_num_threads() const noexcept {
+    return num_threads_;
+  }
+
+  /**
    * @brief Ensure HPX runtime is initialized.
    *
    * Thread-safe initialization using double-checked locking.
@@ -117,10 +136,25 @@ public:
       std::lock_guard<std::mutex> lock(mutex_);
       if (!initialized_.load(std::memory_order_relaxed)) {
         if (!hpx::is_running()) {
-          // Start HPX local runtime (no networking)
-          // Using nullptr for argc/argv starts with default settings
           started_by_us_ = true;
-          hpx::local::start(nullptr, 0, nullptr);
+
+          // Build command-line arguments for HPX
+          std::vector<std::string> args_storage;
+          args_storage.push_back("nwgraph");  // Program name
+
+          if (num_threads_ > 0) {
+            args_storage.push_back("--hpx:threads=" + std::to_string(num_threads_));
+          }
+
+          // Convert to char* array
+          std::vector<char*> argv;
+          for (auto& s : args_storage) {
+            argv.push_back(const_cast<char*>(s.c_str()));
+          }
+          argv.push_back(nullptr);
+
+          int argc = static_cast<int>(argv.size() - 1);
+          hpx::local::start(nullptr, argc, argv.data());
         }
         initialized_.store(true, std::memory_order_release);
       }
@@ -151,9 +185,22 @@ private:
   std::atomic<bool> initialized_{false};
   std::mutex mutex_;
   bool started_by_us_{false};
+  std::size_t num_threads_{0};  // 0 = use all available
 };
 
 } // namespace detail
+
+/**
+ * @brief Set the number of HPX worker threads.
+ *
+ * Must be called BEFORE the first parallel operation. Once HPX is
+ * initialized, thread count cannot be changed.
+ *
+ * @param n Number of threads (0 = use all available hardware threads)
+ */
+inline void set_num_threads(std::size_t n) {
+  detail::hpx_runtime_manager::instance().set_num_threads(n);
+}
 
 /**
  * @brief Ensure the HPX runtime is initialized.
@@ -176,6 +223,19 @@ inline bool is_initialized() noexcept {
 }
 
 #else // TBB backend
+
+/**
+ * @brief Set the number of TBB worker threads.
+ *
+ * For TBB, this is a no-op since thread limiting is done via
+ * tbb::global_control in the calling code.
+ *
+ * @param n Number of threads (ignored for TBB)
+ */
+inline void set_num_threads(std::size_t /*n*/) noexcept {
+  // TBB thread count is controlled via tbb::global_control
+  // in the benchmark code itself
+}
 
 /**
  * @brief Ensure the TBB runtime is initialized.

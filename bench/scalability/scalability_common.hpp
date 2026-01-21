@@ -240,6 +240,7 @@ struct Args {
   std::string file;
   size_t      ntrials     = 5;
   size_t      max_threads = 0;  // 0 = auto-detect
+  size_t      hpx_threads = 0;  // HPX: fixed thread count (0 = scaling study)
   size_t      problem_size = 10000000;  // For synthetic benchmarks
   bool        verbose     = false;
   bool        csv_output  = false;
@@ -258,6 +259,10 @@ struct Args {
       } else if (arg == "-t" || arg == "--threads") {
         if (++i >= argc) usage(argv[0], "Missing argument for " + arg);
         max_threads = std::stoul(argv[i]);
+      } else if (arg == "--hpx-threads") {
+        // HPX-specific: set fixed thread count for this run
+        if (++i >= argc) usage(argv[0], "Missing argument for " + arg);
+        hpx_threads = std::stoul(argv[i]);
       } else if (arg == "-s" || arg == "--size") {
         if (++i >= argc) usage(argv[0], "Missing argument for " + arg);
         problem_size = std::stoul(argv[i]);
@@ -278,6 +283,26 @@ struct Args {
     if (max_threads == 0) {
       max_threads = hardware_threads();
     }
+
+    // For HPX: set thread count BEFORE any parallel operations
+    // This must happen before backend::ensure_initialized() is called
+    if (hpx_threads > 0) {
+      backend::set_num_threads(hpx_threads);
+    }
+  }
+
+  /**
+   * @brief Get thread counts for scaling study.
+   *
+   * For HPX with --hpx-threads, returns just that single thread count.
+   * Otherwise returns the standard scaling thread counts.
+   */
+  std::vector<size_t> get_thread_counts() const {
+    if (hpx_threads > 0) {
+      // HPX: single fixed thread count
+      return {hpx_threads};
+    }
+    return thread_counts(max_threads);
   }
 
   static void usage(const std::string& prog, const std::string& msg = "") {
@@ -287,11 +312,15 @@ struct Args {
     std::cerr << "Usage: " << prog << " [OPTIONS]\n";
     std::cerr << "  -f, --file FILE      Input graph file (optional)\n";
     std::cerr << "  -n, --ntrials N      Number of trials [default: 5]\n";
-    std::cerr << "  -t, --threads N      Max threads [default: auto-detect]\n";
+    std::cerr << "  -t, --threads N      Max threads for scaling [default: auto]\n";
+    std::cerr << "  --hpx-threads N      HPX: fixed thread count for this run\n";
     std::cerr << "  -s, --size N         Problem size [default: 10000000]\n";
     std::cerr << "  -v, --verbose        Verbose output\n";
     std::cerr << "  --csv                CSV output format\n";
     std::cerr << "  -o, --output FILE    Output file for results\n";
+    std::cerr << "\n";
+    std::cerr << "HPX Note: Use --hpx-threads N to set thread count at startup.\n";
+    std::cerr << "          Run multiple times with different values for scaling.\n";
     exit(1);
   }
 };

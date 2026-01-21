@@ -43,7 +43,7 @@ void bench_sum_reduction(const Args& args) {
   std::vector<double> data(N);
   std::iota(data.begin(), data.end(), 1.0);
 
-  auto counts = thread_counts(args.max_threads);
+  auto counts = args.get_thread_counts();
 
   scaling_study("parallel_reduce (sum)", [&](size_t nthreads) {
     ThreadLimiter limiter(nthreads);
@@ -71,7 +71,7 @@ void bench_minmax_reduction(const Args& args) {
     data[i] = std::sin(static_cast<double>(i) * 0.1) * 1000.0;
   }
 
-  auto counts = thread_counts(args.max_threads);
+  auto counts = args.get_thread_counts();
 
   scaling_study("parallel_reduce (min)", [&](size_t nthreads) {
     ThreadLimiter limiter(nthreads);
@@ -112,7 +112,7 @@ void bench_dot_product(const Args& args) {
     b[i] = std::cos(static_cast<double>(i) * 0.01);
   }
 
-  auto counts = thread_counts(args.max_threads);
+  auto counts = args.get_thread_counts();
 
   scaling_study("parallel_reduce (dot product)", [&](size_t nthreads) {
     ThreadLimiter limiter(nthreads);
@@ -139,7 +139,7 @@ void bench_l2_norm(const Args& args) {
     data[i] = std::sin(static_cast<double>(i) * 0.001);
   }
 
-  auto counts = thread_counts(args.max_threads);
+  auto counts = args.get_thread_counts();
 
   scaling_study("parallel_reduce (L2 norm)", [&](size_t nthreads) {
     ThreadLimiter limiter(nthreads);
@@ -171,7 +171,7 @@ void bench_range_reduce(const Args& args) {
     data[i] = static_cast<double>(i % 1000);
   }
 
-  auto counts = thread_counts(args.max_threads);
+  auto counts = args.get_thread_counts();
 
   scaling_study("parallel_reduce (splittable_range)", [&](size_t nthreads) {
     ThreadLimiter limiter(nthreads);
@@ -205,7 +205,7 @@ void bench_convergence_check(const Args& args) {
     new_rank[i] = (1.0 / N) + (static_cast<double>(i % 100) - 50) * 1e-6;
   }
 
-  auto counts = thread_counts(args.max_threads);
+  auto counts = args.get_thread_counts();
 
   scaling_study("parallel_reduce (convergence)", [&](size_t nthreads) {
     ThreadLimiter limiter(nthreads);
